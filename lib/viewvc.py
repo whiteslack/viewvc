@@ -105,6 +105,7 @@ class Request:
   def __init__(self, server, cfg):
     self.server = server
     self.cfg = cfg
+    self.debuglines = []
 
     self.script_name = _normalize_path(server.getenv('SCRIPT_NAME', ''))
     self.browser = server.getenv('HTTP_USER_AGENT', 'unknown')
@@ -131,6 +132,7 @@ class Request:
 
   def run_viewvc(self):
 
+    self.add_debugline('Here we go...')
     cfg = self.cfg
 
     # This function first parses the query string and sets the following
@@ -254,9 +256,11 @@ class Request:
         cfg.overlay_root_options(self.rootname)
 
         # Setup an Authorizer for this rootname and username
+        self.add_debugline('Setting up the authorizer')
         self.auth = setup_authorizer(cfg, self.username)
 
         # Create the repository object
+        self.add_debugline('Selecting repository')
         try:
           if roottype == 'cvs':
             self.rootpath = vclib.ccvs.canonicalize_rootpath(rootpath)
@@ -286,6 +290,7 @@ class Request:
           % self.rootname, "404 Not Found")
 
     if self.repos:
+      self.add_debugline('Opening repository')
       self.repos.open()
       vctype = self.repos.roottype()
       if vctype == vclib.SVN:
@@ -415,12 +420,13 @@ class Request:
         and self.view_func is not redirect_pathrev):
       needs_redirect = 1
 
-    # startup is done now.
-
     # If we need to redirect, do so.  Otherwise, handle our requested view.
     if needs_redirect:
-      self.server.redirect(self.get_url())
+      redirect_url = self.get_url()
+      self.add_debugline(f'Redirecting to {redirect_url}')
+      self.server.redirect(redirect_url)
     else:
+      self.add_debugline(f'Executing {self.view_func.__name__}()')
       self.view_func(self)
 
   def get_url(self, escape=0, partial=0, prefix=0, **args):
@@ -448,6 +454,12 @@ class Request:
                 self.server.getenv("HTTP_HOST"),
                 result)
     return result
+
+  def add_debugline(self, debugline):
+    """Add to the set of strings a new one."""
+
+    if self.cfg.options.enable_debuglines:
+      self.debuglines.append(_item(timestamp=time.time(), line=debugline))
 
   def get_form(self, **args):
     """Constructs a link to another ViewVC page just like the get_link
@@ -1591,6 +1603,7 @@ def common_template_data(request, revision=None, mime_type=None):
   data = TemplateData({
     'annotate_href': None,
     'cfg': cfg,
+    'debuglines': request.debuglines,
     'docroot': (cfg.options.docroot is None
                 and request.script_name + '/' + docroot_magic_path
                 or cfg.options.docroot),
